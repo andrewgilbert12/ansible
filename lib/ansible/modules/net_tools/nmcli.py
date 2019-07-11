@@ -771,6 +771,79 @@ class Nmcli(object):
             connection_list.append(self.connection_to_string(config))
         return connection_list
 
+    def connection_settings_changed(self):
+        # Ask the settings service for the list of connections it provides
+	# We assume that the connection referenced by 'self.cname' already exists
+        bus = dbus.SystemBus()
+
+        service_name = "org.freedesktop.NetworkManager"
+        settings = None
+        try:
+            proxy = bus.get_object(service_name, "/org/freedesktop/NetworkManager/Settings")
+            settings = dbus.Interface(proxy, "org.freedesktop.NetworkManager.Settings")
+        except dbus.exceptions.DBusException as e:
+            self.module.fail_json(msg="Unable to read Network Manager settings from DBus system bus: %s" % to_native(e),
+                                  details="Please check if NetworkManager is installed and"
+                                          "service network-manager is started.")
+        connection_paths = settings.ListConnections()
+
+        for path in connection_paths:
+            con_proxy = bus.get_object(service_name, path)
+            settings_connection = dbus.Interface(con_proxy, "org.freedesktop.NetworkManager.Settings.Connection")
+            config = settings_connection.GetSettings()
+
+	    if config['connection']['id'] == self.cname:
+                break
+
+	// TODO: for EACH of the below params, check if it needs to be changed based on the current values of the settings in 'config'
+	// return True if it needs to be changed
+        self.autoconnect = module.params['autoconnect']
+        self.conn_name = module.params['conn_name']
+        self.master = module.params['master']
+        self.ifname = module.params['ifname']
+        self.type = module.params['type']
+        self.ip4 = module.params['ip4']
+        self.gw4 = module.params['gw4']
+        self.dns4 = ' '.join(module.params['dns4']) if module.params.get('dns4') else None
+        self.dns4_search = ' '.join(module.params['dns4_search']) if module.params.get('dns4_search') else None
+        self.ip6 = module.params['ip6']
+        self.gw6 = module.params['gw6']
+        self.dns6 = ' '.join(module.params['dns6']) if module.params.get('dns6') else None
+        self.dns6_search = ' '.join(module.params['dns6_search']) if module.params.get('dns6_search') else None
+        self.mtu = module.params['mtu']
+        self.stp = module.params['stp']
+        self.priority = module.params['priority']
+        self.mode = module.params['mode']
+        self.miimon = module.params['miimon']
+        self.primary = module.params['primary']
+        self.downdelay = module.params['downdelay']
+        self.updelay = module.params['updelay']
+        self.arp_interval = module.params['arp_interval']
+        self.arp_ip_target = module.params['arp_ip_target']
+        self.slavepriority = module.params['slavepriority']
+        self.forwarddelay = module.params['forwarddelay']
+        self.hellotime = module.params['hellotime']
+        self.maxage = module.params['maxage']
+        self.ageingtime = module.params['ageingtime']
+        self.hairpin = module.params['hairpin']
+        self.path_cost = module.params['path_cost']
+        self.mac = module.params['mac']
+        self.vlanid = module.params['vlanid']
+        self.vlandev = module.params['vlandev']
+        self.flags = module.params['flags']
+        self.ingress = module.params['ingress']
+        self.egress = module.params['egress']
+        self.vxlan_id = module.params['vxlan_id']
+        self.vxlan_local = module.params['vxlan_local']
+        self.vxlan_remote = module.params['vxlan_remote']
+        self.ip_tunnel_dev = module.params['ip_tunnel_dev']
+        self.ip_tunnel_local = module.params['ip_tunnel_local']
+        self.ip_tunnel_remote = module.params['ip_tunnel_remote']
+        self.nmcli_bin = self.module.get_bin_path('nmcli', True)
+        self.dhcp_client_id = module.params['dhcp_client_id']
+
+        return False
+
     def connection_exists(self):
         # we are going to use name and type in this instance to find if that connection exists and is of type x
         connections = self.list_connection_info()
@@ -1511,7 +1584,7 @@ def main():
     if nmcli.state == 'absent':
         if nmcli.connection_exists():
             if module.check_mode:
-                module.exit_json(changed=True)
+                module.exit_json(changed=self.connection_settings_changed())
             (rc, out, err) = nmcli.down_connection()
             (rc, out, err) = nmcli.remove_connection()
             if rc != 0:
@@ -1525,7 +1598,7 @@ def main():
             if module.check_mode:
                 module.exit_json(changed=True)
             (rc, out, err) = nmcli.modify_connection()
-        if not nmcli.connection_exists():
+        else:
             result['Connection'] = ('Connection %s of Type %s is being added' % (nmcli.conn_name, nmcli.type))
             if module.check_mode:
                 module.exit_json(changed=True)
